@@ -1,174 +1,226 @@
-// market_reality.js — Capa 1: Market Reality
-// Propósito: Visualización de benchmarks del mercado
+// market_reality.js — Layer 1: Market Reality
 // Ref: instrucciones_v2 — Sección 14
 
-function renderMarketReality(filters) {
-  console.log('[market_reality] Renderizando...');
-
-  // Filtrar datos
-  let data = applyFilters(AppData.market);
-
-  // KPIs
-  const kpiHtml = `
-    ${createKPICard(data.numRows(), 'Total Benchmarks')}
-    ${createKPICard(data.column('country').data.filter((v, i, a) => a.indexOf(v) === i).length, 'Countries')}
-    ${createKPICard(data.column('sector').data.filter((v, i, a) => a.indexOf(v) === i).length, 'Sectors')}
-    ${createKPICard(data.column('source_name').data.filter((v, i, a) => a.indexOf(v) === i).length, 'Sources')}
-  `;
-
-  const kpiContainer = document.getElementById('market-kpis');
-  if (kpiContainer) kpiContainer.innerHTML = kpiHtml;
-
-  // Chart 1: Investment by Sector
-  try {
-    const byMet = data.filter(d => d.metric_name === 'investment_amount_usd')
-                       .groupby('sector')
-                       .rollup({ total: aq.op.sum('metric_value_mid') })
-                       .orderby(aq.desc('total'))
-                       .objects();
-
-    const trace1 = {
-      y: byMet.map(d => d.sector),
-      x: byMet.map(d => d.total),
-      type: 'bar',
-      orientation: 'h',
-      marker: { color: byMet.map(d => sectorColor(d.sector)) }
-    };
-
-    Plotly.newPlot('chart-investment-sector', [trace1], {
-      ...PLOTLY_LAYOUT_BASE,
-      title: '',
-      xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: 'USD' }
-    }, PLOTLY_CONFIG);
-  } catch (e) { console.warn('Chart 1 error:', e); }
-
-  // Chart 2: Valuation Range by Stage
-  try {
-    const byStage = data.filter(d => d.metric_name === 'valuation_pre_money_usd')
-                         .groupby('round_stage')
-                         .rollup({
-                           p10: d => computeStats(d.metric_value_mid.map(parseFloat).filter(isFinite)).p10,
-                           p90: d => computeStats(d.metric_value_mid.map(parseFloat).filter(isFinite)).p90,
-                           mid: d => computeStats(d.metric_value_mid.map(parseFloat).filter(isFinite)).median
-                         })
-                         .orderby('round_stage')
-                         .objects();
-
-    const stages = byStage.map(d => d.round_stage);
-    const trace2 = {
-      x: stages,
-      y: byStage.map(d => d.mid || 0),
-      error_y: {
-        type: 'data',
-        symmetric: false,
-        array: byStage.map(d => (d.p90 || 0) - (d.mid || 0)),
-        arrayminus: byStage.map(d => (d.mid || 0) - (d.p10 || 0))
-      },
-      type: 'bar',
-      marker: { color: AIDA_COLORS.accent }
-    };
-
-    Plotly.newPlot('chart-valuation-stage', [trace2], {
-      ...PLOTLY_LAYOUT_BASE,
-      title: '',
-      yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: 'USD (P10-P90)' }
-    }, PLOTLY_CONFIG);
-  } catch (e) { console.warn('Chart 2 error:', e); }
-
-  // Chart 3: Revenue Multiples by Sector
-  try {
-    const byMult = data.filter(d => d.metric_name === 'revenue_multiple')
-                        .groupby('sector', 'round_stage')
-                        .rollup({ avg: aq.op.avg('metric_value_mid') })
-                        .objects();
-
-    const sectors = [...new Set(byMult.map(d => d.sector))];
-    const stages = [...new Set(byMult.map(d => d.round_stage))];
-
-    const traces3 = stages.map((stage, idx) => {
-      const stageData = byMult.filter(d => d.round_stage === stage);
-      return {
-        x: stageData.map(d => d.sector),
-        y: stageData.map(d => d.avg || 0),
-        name: stage,
-        type: 'bar'
-      };
-    });
-
-    Plotly.newPlot('chart-multiples-sector', traces3, {
-      ...PLOTLY_LAYOUT_BASE,
-      barmode: 'group',
-      yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: 'Multiple (x)' }
-    }, PLOTLY_CONFIG);
-  } catch (e) { console.warn('Chart 3 error:', e); }
-
-  // Chart 4: Time Between Rounds
-  try {
-    const byTime = data.filter(d => d.metric_name === 'time_between_rounds_months')
-                        .groupby('round_stage')
-                        .rollup({ avg: aq.op.avg('metric_value_mid') })
-                        .orderby('round_stage')
-                        .objects();
-
-    const trace4 = {
-      x: byTime.map(d => d.round_stage),
-      y: byTime.map(d => d.avg || 0),
-      type: 'bar',
-      marker: { color: AIDA_COLORS.accent }
-    };
-
-    Plotly.newPlot('chart-time-rounds', [trace4], {
-      ...PLOTLY_LAYOUT_BASE,
-      yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: 'Months' }
-    }, PLOTLY_CONFIG);
-  } catch (e) { console.warn('Chart 4 error:', e); }
-
-  // Chart 5: Graduation Rates
-  try {
-    const byGrad = data.filter(d => d.metric_name === 'graduation_rate')
-                        .groupby('round_stage')
-                        .rollup({ avg: aq.op.avg('metric_value_mid') })
-                        .orderby('round_stage')
-                        .objects();
-
-    const trace5 = {
-      y: byGrad.map(d => d.round_stage),
-      x: byGrad.map(d => (d.avg || 0) * 100),
-      type: 'bar',
-      orientation: 'h',
-      marker: { color: AIDA_COLORS.accent }
-    };
-
-    Plotly.newPlot('chart-graduation', [trace5], {
-      ...PLOTLY_LAYOUT_BASE,
-      xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: 'Rate (%)' }
-    }, PLOTLY_CONFIG);
-  } catch (e) { console.warn('Chart 5 error:', e); }
-
-  // Chart 6: Temporal Evolution (placeholder)
-  try {
-    const byDate = data.filter(d => d.metric_name === 'growth_yoy')
-                        .groupby('data_reference_date')
-                        .rollup({ avg: aq.op.avg('metric_value_mid') })
-                        .orderby('data_reference_date')
-                        .objects();
-
-    if (byDate.length > 1) {
-      const trace6 = {
-        x: byDate.map(d => d.data_reference_date),
-        y: byDate.map(d => d.avg || 0),
-        type: 'scatter',
-        mode: 'lines+markers',
-        line: { color: AIDA_COLORS.accent, width: 2 },
-        marker: { size: 6 }
-      };
-
-      Plotly.newPlot('chart-temporal', [trace6], {
-        ...PLOTLY_LAYOUT_BASE,
-        yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: 'Growth YoY (%)' }
-      }, PLOTLY_CONFIG);
+async function renderMarketReality(filters) {
+    if (!AppData.market || AppData.market.numRows() === 0) {
+        console.warn('⚠️ Market data is empty or not loaded');
+        document.getElementById('market-kpis').innerHTML = '<p>No data available</p>';
+        return;
     }
-  } catch (e) { console.warn('Chart 6 error:', e); }
 
-  console.log('[market_reality] Renderizado completado');
+    let table = AppData.market;
+    console.log('🔍 Market Reality — Total rows:', table.numRows());
+
+    // Aplicar filtros
+    if (filters.sector && filters.sector !== '') {
+        table = table.filter(aq.escape(d => d.sector === filters.sector));
+        console.log('After sector filter:', table.numRows());
+    }
+    if (filters.country && filters.country !== '') {
+        table = table.filter(aq.escape(d => d.country === filters.country));
+        console.log('After country filter:', table.numRows());
+    }
+
+    // 🔍 DEBUG: Si está vacío después de filtrar, usar sin filtros
+    if (table.numRows() === 0) {
+        console.warn('⚠️ Filters removed all data. Using unfiltered data.');
+        table = AppData.market;
+    }
+
+    // KPI Cards
+    const totalBenchmarks = table.numRows();
+    const uniqueCountries = table.array('country').filter((v, i, a) => a.indexOf(v) === i).length;
+    const uniqueSectors = table.array('sector').filter((v, i, a) => a.indexOf(v) === i).length;
+    const uniqueSources = table.array('source_name').filter((v, i, a) => a.indexOf(v) === i).length;
+
+    document.getElementById('market-kpis').innerHTML = `
+        <div class="kpi-card">
+            <div class="kpi-value">${totalBenchmarks.toLocaleString()}</div>
+            <div class="kpi-label">Total Benchmarks</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-value">${uniqueCountries}</div>
+            <div class="kpi-label">Countries</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-value">${uniqueSectors}</div>
+            <div class="kpi-label">Sectors</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-value">${uniqueSources}</div>
+            <div class="kpi-label">Sources</div>
+        </div>
+    `;
+
+    // Chart 1 — Investment by Sector (Bar horizontal)
+    const investmentBySector = table
+        .filter(aq.escape(d => d.metric_name === 'investment_amount_usd'))
+        .groupby('sector')
+        .rollup({
+            total: d => aq.op.sum(d.metric_value_mid),
+            count: d => aq.op.count()
+        })
+        .orderby(aq.desc('total'))
+        .limit(10);
+
+    console.log('Investment by sector data:', investmentBySector.objects());
+
+    if (investmentBySector.numRows() > 0) {
+        const sectors = investmentBySector.array('sector');
+        const values = investmentBySector.array('total');
+
+        Plotly.newPlot('chart-investment-sector', [{
+            type: 'bar',
+            x: values,
+            y: sectors,
+            orientation: 'h',
+            marker: { color: AIDA_COLORS.accent },
+            text: values.map(v => fmtUSD(v)),
+            textposition: 'outside',
+        }], {
+            ...PLOTLY_LAYOUT_BASE,
+            xaxis: { title: 'Investment (USD)' },
+            margin: { l: 150, r: 80, t: 30, b: 50 }
+        }, PLOTLY_CONFIG);
+    } else {
+        Plotly.newPlot('chart-investment-sector', [], { ...PLOTLY_LAYOUT_BASE }, PLOTLY_CONFIG);
+    }
+
+    // Chart 2 — Valuation Range by Stage (Box plot)
+    const valuationByStage = table
+        .filter(aq.escape(d => d.metric_name === 'valuation_pre_money_usd' && d.metric_value_mid != null))
+        .groupby('round_stage')
+        .rollup({
+            values: d => d.metric_value_mid,
+            min: d => aq.op.min(d.metric_value_mid),
+            max: d => aq.op.max(d.metric_value_mid),
+            mean: d => aq.op.mean(d.metric_value_mid),
+        });
+
+    console.log('Valuation by stage:', valuationByStage.objects());
+
+    if (valuationByStage.numRows() > 0) {
+        const stages = valuationByStage.array('round_stage');
+        const lowerFence = valuationByStage.array('min');
+        const upperFence = valuationByStage.array('max');
+
+        Plotly.newPlot('chart-valuation-stage', [{
+            type: 'box',
+            y: table
+                .filter(aq.escape(d => d.metric_name === 'valuation_pre_money_usd'))
+                .array('metric_value_mid'),
+            x: table
+                .filter(aq.escape(d => d.metric_name === 'valuation_pre_money_usd'))
+                .array('round_stage'),
+            marker: { color: AIDA_COLORS.accent },
+        }], {
+            ...PLOTLY_LAYOUT_BASE,
+            yaxis: { title: 'Valuation (USD)', type: 'log' },
+            xaxis: { title: 'Stage' }
+        }, PLOTLY_CONFIG);
+    }
+
+    // Chart 3 — Revenue Multiples by Sector (Bar)
+    const multiplesBySector = table
+        .filter(aq.escape(d => d.metric_name === 'revenue_multiple' && d.metric_value_mid != null))
+        .groupby('sector')
+        .rollup({
+            avg_multiple: d => aq.op.mean(d.metric_value_mid),
+        })
+        .orderby(aq.desc('avg_multiple'))
+        .limit(10);
+
+    if (multiplesBySector.numRows() > 0) {
+        Plotly.newPlot('chart-multiples-sector', [{
+            type: 'bar',
+            x: multiplesBySector.array('sector'),
+            y: multiplesBySector.array('avg_multiple'),
+            marker: { color: AIDA_COLORS.accent },
+            text: multiplesBySector.array('avg_multiple').map(v => fmtMultiple(v)),
+            textposition: 'outside',
+        }], {
+            ...PLOTLY_LAYOUT_BASE,
+            yaxis: { title: 'Revenue Multiple (x)' },
+            xaxis: { title: 'Sector' }
+        }, PLOTLY_CONFIG);
+    }
+
+    // Chart 4 — Time Between Rounds (Bar)
+    const timeRounds = table
+        .filter(aq.escape(d => d.metric_name === 'time_between_rounds_months' && d.metric_value_mid != null))
+        .groupby('round_stage')
+        .rollup({
+            avg_months: d => aq.op.mean(d.metric_value_mid),
+        });
+
+    if (timeRounds.numRows() > 0) {
+        Plotly.newPlot('chart-time-rounds', [{
+            type: 'bar',
+            x: timeRounds.array('round_stage'),
+            y: timeRounds.array('avg_months'),
+            marker: { color: AIDA_COLORS.accent },
+            text: timeRounds.array('avg_months').map(v => fmtMonths(v)),
+            textposition: 'outside',
+        }], {
+            ...PLOTLY_LAYOUT_BASE,
+            yaxis: { title: 'Months' },
+        }, PLOTLY_CONFIG);
+    }
+
+    // Chart 5 — Graduation Rates (Bar)
+    const graduationRates = table
+        .filter(aq.escape(d => d.metric_name === 'graduation_rate' && d.metric_value_mid != null))
+        .groupby('round_stage')
+        .rollup({
+            avg_rate: d => aq.op.mean(d.metric_value_mid),
+        });
+
+    if (graduationRates.numRows() > 0) {
+        Plotly.newPlot('chart-graduation', [{
+            type: 'bar',
+            x: graduationRates.array('round_stage'),
+            y: graduationRates.array('avg_rate'),
+            marker: { color: AIDA_COLORS.accent },
+            text: graduationRates.array('avg_rate').map(v => fmtPct(v)),
+            textposition: 'outside',
+        }], {
+            ...PLOTLY_LAYOUT_BASE,
+            yaxis: { title: 'Graduation Rate (%)' },
+        }, PLOTLY_CONFIG);
+    }
+
+    // Chart 6 — Temporal Evolution (Line chart)
+    // Mostrar evolución de inversión en el tiempo
+    const temporalData = table
+        .filter(aq.escape(d => d.metric_name === 'investment_amount_usd' && d.data_reference_date != null))
+        .groupby('data_reference_date', 'sector')
+        .rollup({
+            total: d => aq.op.sum(d.metric_value_mid)
+        })
+        .orderby('data_reference_date');
+
+    if (temporalData.numRows() > 0) {
+        const uniqueSectors = [...new Set(temporalData.array('sector'))];
+        const traces = uniqueSectors.map(sector => ({
+            type: 'scatter',
+            mode: 'lines+markers',
+            name: sector,
+            x: temporalData
+                .filter(aq.escape(d => d.sector === sector))
+                .array('data_reference_date'),
+            y: temporalData
+                .filter(aq.escape(d => d.sector === sector))
+                .array('total'),
+            line: { width: 2 },
+            marker: { size: 5 }
+        }));
+
+        Plotly.newPlot('chart-temporal', traces, {
+            ...PLOTLY_LAYOUT_BASE,
+            xaxis: { title: 'Date' },
+            yaxis: { title: 'Investment (USD)' },
+            showlegend: true,
+            legend: { orientation: 'h', x: 0, y: 1.1 }
+        }, PLOTLY_CONFIG);
+    }
 }

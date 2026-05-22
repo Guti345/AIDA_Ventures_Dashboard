@@ -18,18 +18,18 @@ const AIDA_COLORS = {
   }
 };
 
-// Plotly layout base para dark mode
+// Plotly layout base para light mode
 const PLOTLY_LAYOUT_BASE = {
   paper_bgcolor: 'transparent',
   plot_bgcolor:  'transparent',
-  font:          { color: '#8A8F98', family: 'Inter, sans-serif', size: 12 },
-  xaxis:         { gridcolor: '#1E2A3A', zerolinecolor: '#1E2A3A',
-                   tickfont: { color: '#8A8F98' } },
-  yaxis:         { gridcolor: '#1E2A3A', zerolinecolor: '#1E2A3A',
-                   tickfont: { color: '#8A8F98' } },
+  font:          { color: '#6B7280', family: 'Inter, sans-serif', size: 12 },
+  xaxis:         { gridcolor: '#E5E7EB', zerolinecolor: '#D1D5DB',
+                   tickfont: { color: '#6B7280' } },
+  yaxis:         { gridcolor: '#E5E7EB', zerolinecolor: '#D1D5DB',
+                   tickfont: { color: '#6B7280' } },
   margin:        { t: 30, r: 20, b: 50, l: 60 },
   showlegend:    false,
-  hoverlabel:    { bgcolor: '#132139', font: { color: '#fff', size: 12 } },
+  hoverlabel:    { bgcolor: '#FFFFFF', bordercolor: '#D1D5DB', font: { color: '#1F2937', size: 12 } },
 };
 
 const PLOTLY_CONFIG = { responsive: true, displayModeBar: false };

@@ -1,162 +1,210 @@
-// valuation_layer.js — Capa 3: Valuation Layer
-// Propósito: Análisis de valuación y scores de atractivo
+// valuation_layer.js — Layer 3: Valuation Layer
 // Ref: instrucciones_v2 — Sección 16
 
-function renderValuationLayer(filters) {
-  console.log('[valuation_layer] Renderizando...');
+async function renderValuationLayer(filters) {
+    if (!AppData.merged || AppData.merged.numRows() === 0) {
+        console.warn('⚠️ Merged valuation data is empty');
+        return;
+    }
 
-  let data = applyFilters(AppData.merged);
+    let table = AppData.merged;
 
-  // KPIs
-  const signals = data.column('valuation_signal').data;
-  const cheap = signals.filter(s => s === 'cheap').length;
-  const fair = signals.filter(s => s === 'fair').length;
-  const expensive = signals.filter(s => s === 'expensive').length;
-  const noBench = signals.filter(s => s === 'no_benchmark').length;
+    // Filtros
+    if (filters.sector && filters.sector !== '') {
+        table = table.filter(aq.escape(d => d.sector === filters.sector));
+    }
+    if (filters.valuation_signal && filters.valuation_signal !== '') {
+        table = table.filter(aq.escape(d => d.valuation_signal === filters.valuation_signal));
+    }
 
-  const attractStats = computeStats(data.column('relative_attractiveness_score').data.map(parseFloat).filter(isFinite));
+    if (table.numRows() === 0) {
+        table = AppData.merged;
+    }
 
-  const kpiHtml = `
-    ${createKPICard(cheap, 'Cheap Deals')}
-    ${createKPICard(fair, 'Fair Value')}
-    ${createKPICard(expensive, 'Expensive')}
-    ${createKPICard(attractStats?.median?.toFixed(1) || '—', 'Avg Attractiveness')}
-  `;
+    // KPI Cards
+    const cheapCount = table.filter(aq.escape(d => d.valuation_signal === 'cheap')).numRows();
+    const fairCount = table.filter(aq.escape(d => d.valuation_signal === 'fair')).numRows();
+    const expensiveCount = table.filter(aq.escape(d => d.valuation_signal === 'expensive')).numRows();
+    const avgAttractiveness = computeStats(table.array('relative_attractiveness_score').filter(v => v != null)).mean || 0;
 
-  const kpiContainer = document.getElementById('valuation-kpis');
-  if (kpiContainer) kpiContainer.innerHTML = kpiHtml;
+    document.getElementById('valuation-kpis').innerHTML = `
+        <div class="kpi-card">
+            <div class="kpi-value" style="color: var(--color-cheap);">${cheapCount}</div>
+            <div class="kpi-label">Cheap Deals</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-value" style="color: var(--color-fair);">${fairCount}</div>
+            <div class="kpi-label">Fair Value</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-value" style="color: var(--color-expensive);">${expensiveCount}</div>
+            <div class="kpi-label">Expensive</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-value">${Math.round(avgAttractiveness)}</div>
+            <div class="kpi-label">Avg Attractiveness</div>
+        </div>
+    `;
 
-  // Tabla de valuación
-  try {
-    const tableData = data.select([
-      'startup_name', 'sector', 'round_stage',
-      'entry_multiple', 'bm_revenue_multiple_mid', 'multiple_gap',
-      'valuation_signal', 'benchmark_match_quality'
-    ]).orderby(aq.desc('relative_attractiveness_score'));
+    // Tabla de señales de valuación
+    const paginationSize = 50;
+    const paginated = table.slice(0, paginationSize);
 
-    const columns = [
-      { key: 'startup_name', label: 'Startup', format: v => v || '—' },
-      { key: 'sector', label: 'Sector', format: v => v || '—' },
-      { key: 'round_stage', label: 'Stage', format: v => v || '—' },
-      { key: 'entry_multiple', label: 'Entry Multiple', format: v => fmtMultiple(parseFloat(v)) },
-      { key: 'bm_revenue_multiple_mid', label: 'Benchmark', format: v => fmtMultiple(parseFloat(v)) },
-      { key: 'multiple_gap', label: 'Gap', format: v => fmtMultiple(parseFloat(v)) },
-      { key: 'valuation_signal', label: 'Signal', format: v => signalBadge(v) },
-      { key: 'benchmark_match_quality', label: 'Match Quality', format: v => matchBadge(v) }
-    ];
+    const tableHTML = `
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Startup</th>
+                    <th>Sector</th>
+                    <th>Entry Multiple</th>
+                    <th>Benchmark Multiple</th>
+                    <th>Signal</th>
+                    <th>Match Quality</th>
+                    <th>Attractiveness</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${paginated.objects().map(row => `
+                    <tr>
+                        <td><strong>${row.startup_name || ''}</strong></td>
+                        <td>${row.sector || ''}</td>
+                        <td>${fmtMultiple(row.entry_multiple || 0)}</td>
+                        <td>${fmtMultiple(row.bm_revenue_multiple_mid || 0)}</td>
+                        <td>${signalBadge(row.valuation_signal)}</td>
+                        <td>${matchBadge(row.benchmark_match_quality, row.benchmark_match_level)}</td>
+                        <td>${Math.round(row.relative_attractiveness_score || 0)}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
 
-    const tableHtml = createTableHTML(tableData, columns);
-    const tableContainer = document.getElementById('table-valuation');
-    if (tableContainer) tableContainer.innerHTML = tableHtml;
-  } catch (e) { console.warn('Valuation table error:', e); }
+    document.getElementById('table-valuation').innerHTML = tableHTML;
 
-  // Chart 1: Growth vs Entry Multiple
-  try {
-    const scatter = data.filter(d => isFinite(parseFloat(d.entry_multiple)) && isFinite(parseFloat(d.growth_yoy)))
-                         .objects();
+    // Chart: Growth vs Entry Multiple (Scatter con colores de signal)
+    const filtered = table.filter(aq.escape(d => d.growth_yoy != null && d.entry_multiple != null));
+    const growths = filtered.array('growth_yoy');
+    const multiples = filtered.array('entry_multiple');
+    const signals = filtered.array('valuation_signal');
+    const names = filtered.array('startup_name');
 
-    const signalColors = scatter.map(d => signalColor(d.valuation_signal));
-
-    const trace1 = {
-      x: scatter.map(d => parseFloat(d.entry_multiple) || 0),
-      y: scatter.map(d => parseFloat(d.growth_yoy) || 0),
-      mode: 'markers',
-      type: 'scatter',
-      marker: {
-        size: 8,
-        color: signalColors,
-        opacity: 0.7,
-        line: { width: 1, color: 'white' }
-      },
-      text: scatter.map(d => `${d.startup_name}<br>Signal: ${d.valuation_signal}`),
-      hovertemplate: '%{text}<br>Multiple: %{x:.2f}x<br>Growth: %{y:.1f}%<extra></extra>'
+    const colorMap = {
+        'cheap': AIDA_COLORS.cheap,
+        'fair': AIDA_COLORS.fair,
+        'expensive': AIDA_COLORS.expensive,
+        'no_benchmark': AIDA_COLORS.noBenchmark,
     };
 
-    Plotly.newPlot('chart-growth-multiple', [trace1], {
-      ...PLOTLY_LAYOUT_BASE,
-      xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: 'Entry Multiple (x)' },
-      yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: 'Growth YoY (%)' }
-    }, PLOTLY_CONFIG);
-  } catch (e) { console.warn('Chart Growth Multiple error:', e); }
+    if (filtered.numRows() > 0) {
+        Plotly.newPlot('chart-growth-multiple', [{
+            type: 'scatter',
+            mode: 'markers',
+            x: multiples,
+            y: growths,
+            marker: {
+                size: 8,
+                color: signals.map(s => colorMap[s] || AIDA_COLORS.noBenchmark),
+                opacity: 0.8,
+            },
+            text: names,
+            hovertemplate: '<b>%{text}</b><br>Entry Multiple: %{x:.2f}x<br>Growth: %{y:.0%}<extra></extra>'
+        }], {
+            ...PLOTLY_LAYOUT_BASE,
+            xaxis: { title: 'Entry Multiple (x)' },
+            yaxis: { title: 'Growth YoY (%)' },
+        }, PLOTLY_CONFIG);
+    }
 
-  // Chart 2: Price-Performance Matrix
-  try {
-    const matrixData = data.filter(d => isFinite(parseFloat(d.entry_multiple)) && isFinite(parseFloat(d.growth_yoy)))
-                           .objects();
+    // Chart: Price-Performance Matrix (2x2 Quadrant)
+    const medianMultiple = computeStats(multiples).median;
+    const medianGrowth = computeStats(growths).median;
 
-    const multiples = matrixData.map(d => parseFloat(d.entry_multiple) || 0);
-    const growth = matrixData.map(d => parseFloat(d.growth_yoy) || 0);
-    const medianMult = computeStats(multiples)?.median || 5;
-    const medianGrowth = computeStats(growth)?.median || 100;
+    if (filtered.numRows() > 0 && medianMultiple && medianGrowth) {
+        Plotly.newPlot('chart-ppm', [{
+            type: 'scatter',
+            mode: 'markers',
+            x: multiples,
+            y: growths,
+            marker: {
+                size: 8,
+                color: signals.map(s => colorMap[s] || AIDA_COLORS.noBenchmark),
+                opacity: 0.8,
+            },
+            text: names,
+        }], {
+            ...PLOTLY_LAYOUT_BASE,
+            xaxis: {
+                title: 'Entry Multiple (x)',
+                zeroline: true,
+                showline: true,
+                linewidth: 1,
+                linecolor: '#ccc',
+            },
+            yaxis: {
+                title: 'Growth YoY (%)',
+                zeroline: true,
+                showline: true,
+                linewidth: 1,
+                linecolor: '#ccc',
+            },
+            shapes: [
+                {
+                    type: 'line',
+                    x0: medianMultiple, x1: medianMultiple,
+                    y0: Math.min(...growths), y1: Math.max(...growths),
+                    line: { color: '#ccc', width: 1, dash: 'dash' }
+                },
+                {
+                    type: 'line',
+                    x0: Math.min(...multiples), x1: Math.max(...multiples),
+                    y0: medianGrowth, y1: medianGrowth,
+                    line: { color: '#ccc', width: 1, dash: 'dash' }
+                }
+            ],
+        }, PLOTLY_CONFIG);
+    }
 
-    const trace2 = {
-      x: multiples,
-      y: growth,
-      mode: 'markers',
-      type: 'scatter',
-      marker: {
-        size: 8,
-        color: matrixData.map(d => signalColor(d.valuation_signal)),
-        opacity: 0.7
-      },
-      text: matrixData.map(d => d.startup_name),
-      hovertemplate: '%{text}<br>Multiple: %{x:.2f}x<br>Growth: %{y:.1f}%<extra></extra>'
-    };
+    // Chart: Relative Attractiveness Ranking
+    const topAttractiveness = table
+        .filter(aq.escape(d => d.relative_attractiveness_score != null))
+        .orderby(aq.desc('relative_attractiveness_score'))
+        .limit(15);
 
-    Plotly.newPlot('chart-ppm', [trace2], {
-      ...PLOTLY_LAYOUT_BASE,
-      shapes: [
-        { type: 'line', x0: medianMult, x1: medianMult, y0: 0, y1: 400, line: { color: '#666', dash: 'dash' } },
-        { type: 'line', x0: 0, x1: 20, y0: medianGrowth, y1: medianGrowth, line: { color: '#666', dash: 'dash' } }
-      ],
-      xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: 'Entry Multiple (x)' },
-      yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: 'Growth YoY (%)' }
-    }, PLOTLY_CONFIG);
-  } catch (e) { console.warn('Chart PPM error:', e); }
+    if (topAttractiveness.numRows() > 0) {
+        Plotly.newPlot('chart-attractiveness', [{
+            type: 'bar',
+            x: topAttractiveness.array('relative_attractiveness_score'),
+            y: topAttractiveness.array('startup_name'),
+            orientation: 'h',
+            marker: { color: AIDA_COLORS.accent },
+            text: topAttractiveness.array('relative_attractiveness_score').map(v => Math.round(v)),
+            textposition: 'outside',
+        }], {
+            ...PLOTLY_LAYOUT_BASE,
+            xaxis: { title: 'Attractiveness Score (0-100)' },
+            margin: { l: 200, r: 80, t: 30, b: 50 }
+        }, PLOTLY_CONFIG);
+    }
 
-  // Chart 3: Attractiveness Ranking
-  try {
-    const top = data.filter(d => isFinite(parseFloat(d.relative_attractiveness_score)))
-                     .orderby(aq.desc('relative_attractiveness_score'))
-                     .slice(0, 20)
-                     .objects();
+    // Chart: Efficiency Score Breakdown (Stacked Bar)
+    const topEfficiency = table
+        .filter(aq.escape(d => d.efficiency_score != null))
+        .orderby(aq.desc('efficiency_score'))
+        .limit(10);
 
-    const trace3 = {
-      y: top.map(d => d.startup_name),
-      x: top.map(d => parseFloat(d.relative_attractiveness_score) || 0),
-      type: 'bar',
-      orientation: 'h',
-      marker: { color: top.map(d => signalColor(d.valuation_signal)) }
-    };
-
-    Plotly.newPlot('chart-attractiveness', [trace3], {
-      ...PLOTLY_LAYOUT_BASE,
-      title: '',
-      xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: 'Attractiveness Score (0-100)' }
-    }, PLOTLY_CONFIG);
-  } catch (e) { console.warn('Chart Attractiveness error:', e); }
-
-  // Chart 4: Efficiency Score Breakdown
-  try {
-    const top10 = data.filter(d => isFinite(parseFloat(d.efficiency_score)))
-                       .orderby(aq.desc('efficiency_score'))
-                       .slice(0, 10)
-                       .objects();
-
-    const trace4 = {
-      y: top10.map(d => d.startup_name),
-      x: top10.map(d => parseFloat(d.efficiency_score) || 0),
-      type: 'bar',
-      orientation: 'h',
-      marker: { color: AIDA_COLORS.accent }
-    };
-
-    Plotly.newPlot('chart-efficiency', [trace4], {
-      ...PLOTLY_LAYOUT_BASE,
-      title: '',
-      xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: 'Efficiency Score (0-100)' }
-    }, PLOTLY_CONFIG);
-  } catch (e) { console.warn('Chart Efficiency error:', e); }
-
-  console.log('[valuation_layer] Renderizado completado');
+    if (topEfficiency.numRows() > 0) {
+        Plotly.newPlot('chart-efficiency', [{
+            type: 'bar',
+            x: topEfficiency.array('startup_name'),
+            y: topEfficiency.array('efficiency_score'),
+            marker: { color: AIDA_COLORS.accent },
+            text: topEfficiency.array('efficiency_score').map(v => Math.round(v)),
+            textposition: 'outside',
+        }], {
+            ...PLOTLY_LAYOUT_BASE,
+            yaxis: { title: 'Efficiency Score (0-100)' },
+            xaxis: { title: 'Startup' },
+            margin: { b: 100 }
+        }, PLOTLY_CONFIG);
+    }
 }

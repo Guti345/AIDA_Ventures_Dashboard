@@ -1,171 +1,161 @@
-// startup_review.js — Capa 2: Startup Review
-// Propósito: Análisis del pipeline de startups
+// startup_review.js — Layer 2: Startup Review
 // Ref: instrucciones_v2 — Sección 15
 
-function renderStartupReview(filters) {
-  console.log('[startup_review] Renderizando...');
-
-  let data = applyFilters(AppData.startups);
-
-  // KPIs
-  const stats = {
-    arr_median: computeStats(data.column('arr_usd').data.map(parseFloat).filter(isFinite)),
-    growth_median: computeStats(data.column('growth_yoy').data.map(parseFloat).filter(isFinite)),
-    burn_median: computeStats(data.column('burn_rate_usd').data.map(parseFloat).filter(isFinite)),
-    runway_avg: computeStats(data.column('runway_months').data.map(parseFloat).filter(isFinite))
-  };
-
-  const kpiHtml = `
-    ${createKPICard(fmtUSD(stats.arr_median?.median), 'Median ARR')}
-    ${createKPICard(fmtPctDirect(stats.growth_median?.median), 'Median Growth YoY')}
-    ${createKPICard(fmtUSD(stats.burn_median?.median), 'Median Burn')}
-    ${createKPICard(fmtMonths(stats.runway_avg?.median), 'Median Runway')}
-  `;
-
-  const kpiContainer = document.getElementById('startup-kpis');
-  if (kpiContainer) kpiContainer.innerHTML = kpiHtml;
-
-  // Tabla de startups
-  try {
-    const tableData = data.select([
-      'startup_name', 'sector', 'round_stage', 'country',
-      'arr_usd', 'growth_yoy', 'gross_margin', 'burn_rate_usd',
-      'runway_months', 'ltv_cac_ratio', 'deal_status'
-    ]).orderby(aq.desc('arr_usd'));
-
-    const columns = [
-      { key: 'startup_name', label: 'Startup', format: v => v || '—' },
-      { key: 'sector', label: 'Sector', format: v => v || '—' },
-      { key: 'round_stage', label: 'Stage', format: v => v || '—' },
-      { key: 'country', label: 'Country', format: v => v || '—' },
-      { key: 'arr_usd', label: 'ARR', format: v => fmtUSD(parseFloat(v)) },
-      { key: 'growth_yoy', label: 'Growth YoY', format: v => fmtPctDirect(parseFloat(v)) },
-      { key: 'gross_margin', label: 'GM', format: v => fmtPctDirect(parseFloat(v)) },
-      { key: 'burn_rate_usd', label: 'Burn', format: v => fmtUSD(parseFloat(v)) },
-      { key: 'runway_months', label: 'Runway', format: v => fmtMonths(parseFloat(v)) },
-      { key: 'ltv_cac_ratio', label: 'LTV/CAC', format: v => fmtNumber(parseFloat(v), 2) },
-      { key: 'deal_status', label: 'Status', format: v => v || '—' }
-    ];
-
-    const tableHtml = createTableHTML(tableData, columns);
-    const tableContainer = document.getElementById('table-startups');
-    if (tableContainer) {
-      tableContainer.innerHTML = tableHtml;
-      // Agregar event listeners para filas
-      const rows = tableContainer.querySelectorAll('tbody tr');
-      rows.forEach((row, idx) => {
-        row.style.cursor = 'pointer';
-        row.addEventListener('click', () => {
-          const rowData = tableData.objects()[idx];
-          showStartupDetail(rowData);
-        });
-      });
+async function renderStartupReview(filters) {
+    if (!AppData.startups || AppData.startups.numRows() === 0) {
+        console.warn('⚠️ Startup data is empty');
+        return;
     }
-  } catch (e) { console.warn('Table error:', e); }
 
-  // Chart 1: ARR Distribution (Histogram)
-  try {
-    const arrValues = data.column('arr_usd').data.map(parseFloat).filter(isFinite).sort((a, b) => a - b);
+    let table = AppData.startups;
+    console.log('🔍 Startup Review — Total rows:', table.numRows());
 
-    if (arrValues.length > 0) {
-      const trace1 = {
-        x: arrValues,
+    // Aplicar filtros
+    if (filters.sector && filters.sector !== '') {
+        table = table.filter(aq.escape(d => d.sector === filters.sector));
+    }
+    if (filters.country && filters.country !== '') {
+        table = table.filter(aq.escape(d => d.country === filters.country));
+    }
+    if (filters.round_stage && filters.round_stage !== '') {
+        table = table.filter(aq.escape(d => d.round_stage === filters.round_stage));
+    }
+
+    if (table.numRows() === 0) {
+        table = AppData.startups;
+    }
+
+    // KPI Cards
+    const medianARR = computeStats(table.array('arr_usd').filter(v => v != null && v > 0)).median || 0;
+    const medianGrowth = computeStats(table.array('growth_yoy').filter(v => v != null)).median || 0;
+    const medianBurn = computeStats(table.array('burn_rate_usd').filter(v => v != null)).median || 0;
+    const avgRunway = computeStats(table.array('runway_months').filter(v => v != null)).mean || 0;
+
+    document.getElementById('startup-kpis').innerHTML = `
+        <div class="kpi-card">
+            <div class="kpi-value">${fmtUSD(medianARR)}</div>
+            <div class="kpi-label">Median ARR</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-value">${fmtPct(medianGrowth)}</div>
+            <div class="kpi-label">Median Growth YoY</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-value">${fmtUSD(medianBurn)}</div>
+            <div class="kpi-label">Median Burn</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-value">${Math.round(avgRunway)}</div>
+            <div class="kpi-label">Avg Runway (months)</div>
+        </div>
+    `;
+
+    // Tabla de startups (limitada a 50 filas con paginación)
+    const paginationSize = 50;
+    const paginated = table.slice(0, paginationSize);
+
+    const tableHTML = `
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Sector</th>
+                    <th>Stage</th>
+                    <th>Country</th>
+                    <th>ARR</th>
+                    <th>Growth YoY</th>
+                    <th>Burn/mo</th>
+                    <th>Runway</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${paginated.objects().map(row => `
+                    <tr>
+                        <td><strong>${row.startup_name || ''}</strong></td>
+                        <td>${row.sector || ''}</td>
+                        <td>${row.round_stage || ''}</td>
+                        <td>${row.country || ''}</td>
+                        <td>${fmtUSD(row.arr_usd || 0)}</td>
+                        <td>${fmtPct(row.growth_yoy || 0)}</td>
+                        <td>${fmtUSD(row.burn_rate_usd || 0)}</td>
+                        <td>${row.runway_months ? Math.round(row.runway_months) + 'mo' : 'N/A'}</td>
+                        <td><span class="badge badge-${row.deal_status === 'passed' ? 'cheap' : row.deal_status === 'in_review' ? 'fair' : 'expensive'}">${row.deal_status || 'N/A'}</span></td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+        ${table.numRows() > paginationSize ? `<p style="margin-top: 16px; color: var(--color-text-secondary); font-size: 12px;">Showing ${paginationSize} of ${table.numRows()} startups</p>` : ''}
+    `;
+
+    document.getElementById('table-startups').innerHTML = tableHTML;
+
+    // Chart: ARR Distribution
+    const arrValues = table.array('arr_usd')
+        .filter(v => v != null && v > 0)
+        .map(v => Math.log10(v + 1));  // Log scale para mejor visualización
+
+    Plotly.newPlot('chart-arr-dist', [{
         type: 'histogram',
-        nbinsx: 15,
-        marker: { color: AIDA_COLORS.accent }
-      };
-
-      Plotly.newPlot('chart-arr-dist', [trace1], {
+        x: arrValues,
+        nbinsx: 30,
+        marker: { color: AIDA_COLORS.accent },
+    }], {
         ...PLOTLY_LAYOUT_BASE,
-        title: '',
-        xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: 'ARR (USD)' }
-      }, PLOTLY_CONFIG);
+        xaxis: { title: 'ARR (log scale)' },
+        yaxis: { title: 'Count' },
+    }, PLOTLY_CONFIG);
+
+    // Chart: Growth vs Burn Multiple
+    const burnMultiples = table
+        .filter(aq.escape(d => d.burn_multiple != null && d.growth_yoy != null))
+        .array('burn_multiple');
+    const growthRates = table
+        .filter(aq.escape(d => d.burn_multiple != null && d.growth_yoy != null))
+        .array('growth_yoy');
+    const arrForSize = table
+        .filter(aq.escape(d => d.burn_multiple != null && d.growth_yoy != null))
+        .array('arr_usd');
+
+    if (burnMultiples.length > 0) {
+        Plotly.newPlot('chart-growth-burn', [{
+            type: 'scatter',
+            mode: 'markers',
+            x: burnMultiples,
+            y: growthRates,
+            marker: {
+                size: arrForSize.map(v => Math.min(30, Math.sqrt(v / 100000))),
+                color: AIDA_COLORS.accent,
+                opacity: 0.7,
+            },
+            text: table.filter(aq.escape(d => d.burn_multiple != null)).array('startup_name'),
+            hovertemplate: '<b>%{text}</b><br>Burn Multiple: %{x:.2f}x<br>Growth: %{y:.0%}<extra></extra>'
+        }], {
+            ...PLOTLY_LAYOUT_BASE,
+            xaxis: { title: 'Burn Multiple (lower is better)' },
+            yaxis: { title: 'Growth YoY (%)' },
+        }, PLOTLY_CONFIG);
     }
-  } catch (e) { console.warn('Chart ARR Dist error:', e); }
 
-  // Chart 2: Growth vs Burn Multiple (Scatter)
-  try {
-    const scatter = data.filter(d => isFinite(parseFloat(d.burn_multiple)) && isFinite(parseFloat(d.growth_yoy)))
-                         .objects();
+    // Chart: Ranking por ARR
+    const topARR = table
+        .filter(aq.escape(d => d.arr_usd != null && d.arr_usd > 0))
+        .orderby(aq.desc('arr_usd'))
+        .limit(15);
 
-    const trace2 = {
-      x: scatter.map(d => parseFloat(d.burn_multiple) || 0),
-      y: scatter.map(d => parseFloat(d.growth_yoy) || 0),
-      mode: 'markers',
-      type: 'scatter',
-      marker: {
-        size: scatter.map(d => Math.min(30, Math.max(5, Math.log10(parseFloat(d.arr_usd) || 1)))),
-        color: scatter.map(d => sectorColor(d.sector)),
-        opacity: 0.7
-      },
-      text: scatter.map(d => `${d.startup_name}<br>${d.sector}`),
-      hovertemplate: '%{text}<br>Burn Multiple: %{x:.2f}<br>Growth: %{y:.1f}%<extra></extra>'
-    };
-
-    Plotly.newPlot('chart-growth-burn', [trace2], {
-      ...PLOTLY_LAYOUT_BASE,
-      xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: 'Burn Multiple' },
-      yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: 'Growth YoY (%)' }
-    }, PLOTLY_CONFIG);
-  } catch (e) { console.warn('Chart Growth Burn error:', e); }
-
-  // Chart 3: ARR Ranking
-  try {
-    const top = data.orderby(aq.desc('arr_usd')).slice(0, 15).objects();
-
-    const trace3 = {
-      y: top.map(d => d.startup_name),
-      x: top.map(d => parseFloat(d.arr_usd) || 0),
-      type: 'bar',
-      orientation: 'h',
-      marker: { color: top.map(d => sectorColor(d.sector)) }
-    };
-
-    Plotly.newPlot('chart-arr-ranking', [trace3], {
-      ...PLOTLY_LAYOUT_BASE,
-      title: '',
-      xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: 'ARR (USD)' }
-    }, PLOTLY_CONFIG);
-  } catch (e) { console.warn('Chart ARR Ranking error:', e); }
-
-  console.log('[startup_review] Renderizado completado');
-}
-
-function showStartupDetail(startup) {
-  console.log('[startup_detail] Mostrar:', startup.startup_name);
-
-  const panel = document.getElementById('startup-detail-panel');
-  if (!panel) return;
-
-  let html = `
-    <button class="detail-close" onclick="closeStartupDetail()">×</button>
-    <h3>${startup.startup_name}</h3>
-    <div style="margin-top: 20px;">
-      <p><strong>Sector:</strong> ${startup.sector || '—'}</p>
-      <p><strong>Stage:</strong> ${startup.round_stage || '—'}</p>
-      <p><strong>Country:</strong> ${startup.country || '—'}</p>
-      <p><strong>Status:</strong> ${startup.deal_status || '—'}</p>
-      <hr style="border-color: var(--color-border);">
-      <p><strong>ARR:</strong> ${fmtUSD(parseFloat(startup.arr_usd))}</p>
-      <p><strong>Growth YoY:</strong> ${fmtPctDirect(parseFloat(startup.growth_yoy))}</p>
-      <p><strong>Burn Rate:</strong> ${fmtUSD(parseFloat(startup.burn_rate_usd))}</p>
-      <p><strong>Runway:</strong> ${fmtMonths(parseFloat(startup.runway_months))}</p>
-      <p><strong>Gross Margin:</strong> ${fmtPctDirect(parseFloat(startup.gross_margin))}</p>
-      <p><strong>LTV/CAC:</strong> ${fmtNumber(parseFloat(startup.ltv_cac_ratio), 2)}</p>
-      <p><strong>Headcount:</strong> ${startup.headcount || '—'}</p>
-      <p><strong>Founded:</strong> ${startup.founded_year || '—'}</p>
-    </div>
-  `;
-
-  panel.innerHTML = html;
-  panel.classList.add('active');
-  panel.classList.remove('hidden');
-}
-
-function closeStartupDetail() {
-  const panel = document.getElementById('startup-detail-panel');
-  if (panel) {
-    panel.classList.remove('active');
-    panel.classList.add('hidden');
-  }
+    if (topARR.numRows() > 0) {
+        Plotly.newPlot('chart-arr-ranking', [{
+            type: 'bar',
+            x: topARR.array('arr_usd'),
+            y: topARR.array('startup_name'),
+            orientation: 'h',
+            marker: { color: AIDA_COLORS.accent },
+            text: topARR.array('arr_usd').map(v => fmtUSD(v)),
+            textposition: 'outside',
+        }], {
+            ...PLOTLY_LAYOUT_BASE,
+            xaxis: { title: 'ARR (USD)' },
+            margin: { l: 200, r: 80, t: 30, b: 50 }
+        }, PLOTLY_CONFIG);
+    }
 }

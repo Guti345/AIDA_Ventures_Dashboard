@@ -30,16 +30,40 @@ async function loadAllData() {
     AppData.startups = await parseCSVtoArquero(DATA_PATHS.startups);
     AppData.merged = await parseCSVtoArquero(DATA_PATHS.merged);
 
-    console.log(`[data_loader] Market: ${AppData.market.numRows()} rows`);
-    console.log(`[data_loader] Startups: ${AppData.startups.numRows()} rows`);
-    console.log(`[data_loader] Merged: ${AppData.merged.numRows()} rows`);
+    // 🔍 DEBUG: Imprimir información sobre los datos cargados
+    console.log('=== DATA LOADED ===');
+    console.log('Market benchmarks:', {
+      rows: AppData.market.numRows(),
+      columns: AppData.market.columnNames(),
+      sample: AppData.market.slice(0, 3).objects(),
+      nullCounts: {
+        metric_value_mid: AppData.market.filter(aq.escape(d => d.metric_value_mid == null)).numRows(),
+        sector: AppData.market.filter(aq.escape(d => d.sector == null)).numRows(),
+        country: AppData.market.filter(aq.escape(d => d.country == null)).numRows(),
+      }
+    });
+    console.log('Startups:', {
+      rows: AppData.startups.numRows(),
+      columns: AppData.startups.columnNames(),
+      sample: AppData.startups.slice(0, 3).objects(),
+    });
+    console.log('Merged:', {
+      rows: AppData.merged.numRows(),
+      columns: AppData.merged.columnNames(),
+      sample: AppData.merged.slice(0, 3).objects(),
+    });
+
+    // Verificar que hay datos en columnas críticas
+    const marketSectorUnique = AppData.market.groupby('sector').count();
+    console.log('Sectores únicos en market:', marketSectorUnique.objects());
 
     AppData.loaded = true;
     initDashboard();
   } catch (error) {
-    console.error('[data_loader] Error:', error);
+    console.error('❌ Error loading data:', error);
+    const loading = document.getElementById('loading-state');
     if (loading) {
-      loading.innerHTML = `<p>Error loading data: ${error.message}</p>`;
+      loading.innerHTML = `<p style="color: #ef4444;">Error loading data. Check console.</p>`;
     }
   }
 }
