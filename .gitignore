@@ -6,6 +6,9 @@ __pycache__/
 *.pyc
 *.pyo
 
+# Ingest cache (temporal)
+data/processed/.ingest_cache/
+
 # Outputs generados
 outputs/reports/*.md
 outputs/figures/
