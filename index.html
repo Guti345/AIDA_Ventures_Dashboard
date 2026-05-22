@@ -1,14 +1,194 @@
 <!DOCTYPE html>
-<!-- index.html -->
-<!-- Propósito: Dashboard principal de AIDA Market Intelligence. Punto de entrada HTML para el proyecto. -->
-<!-- Ref: instrucciones_v2 — Sección 4, Sección 15-17 -->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AIDA Market Intelligence</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="src/css/styles.css">
 </head>
 <body>
-    <!-- Dashboard structure to be implemented -->
+
+<!-- Header -->
+<header class="dashboard-header">
+    <div class="header-brand">
+        <span class="header-title">AIDA Market Intelligence</span>
+        <span class="header-subtitle">Investment Intelligence Platform</span>
+    </div>
+    <div class="header-meta">
+        <span id="last-updated-indicator" class="last-updated">Loading...</span>
+    </div>
+</header>
+
+<!-- Tab Navigation -->
+<nav class="tab-nav">
+    <button class="tab-btn active" data-tab="market-reality">Market Reality</button>
+    <button class="tab-btn" data-tab="startup-review">Startup Review</button>
+    <button class="tab-btn" data-tab="valuation-layer">Valuation Layer</button>
+    <button class="tab-btn disabled" data-tab="portfolio">Portfolio & Returns ↗</button>
+</nav>
+
+<!-- Global Filters -->
+<div class="filter-panel" id="global-filters">
+    <select id="filter-sector" class="filter-select">
+        <option value="">All Sectors</option>
+    </select>
+    <select id="filter-country" class="filter-select">
+        <option value="">All Countries</option>
+    </select>
+    <select id="filter-region" class="filter-select">
+        <option value="">All Regions</option>
+    </select>
+    <select id="filter-stage" class="filter-select">
+        <option value="">All Stages</option>
+    </select>
+    <select id="filter-deal-status" class="filter-select">
+        <option value="">All Statuses</option>
+    </select>
+    <button id="btn-reset-filters" class="btn-secondary">Reset Filters</button>
+    <button id="btn-export-csv" class="btn-secondary">Export CSV</button>
+</div>
+
+<!-- Loading State -->
+<div id="loading-state" class="loading">
+    <div class="spinner"></div>
+    <p>Loading intelligence data...</p>
+</div>
+
+<!-- Tab Contents -->
+<main id="app-main" style="display:none">
+
+    <!-- Layer 1: Market Reality -->
+    <div id="tab-market-reality" class="tab-content active">
+        <div class="kpi-grid" id="market-kpis"></div>
+        <div class="chart-grid">
+            <div class="chart-card"><p class="chart-title">Investment by Sector</p>
+                <div id="chart-investment-sector"></div></div>
+            <div class="chart-card"><p class="chart-title">Valuation Range by Stage</p>
+                <div id="chart-valuation-stage"></div></div>
+            <div class="chart-card"><p class="chart-title">Revenue Multiples by Sector & Stage</p>
+                <div id="chart-multiples-sector"></div></div>
+            <div class="chart-card"><p class="chart-title">Time Between Rounds</p>
+                <div id="chart-time-rounds"></div></div>
+            <div class="chart-card"><p class="chart-title">Graduation Rates</p>
+                <div id="chart-graduation"></div></div>
+            <div class="chart-card"><p class="chart-title">Temporal Evolution</p>
+                <div id="chart-temporal"></div></div>
+        </div>
+    </div>
+
+    <!-- Layer 2: Startup Review -->
+    <div id="tab-startup-review" class="tab-content">
+        <div class="kpi-grid" id="startup-kpis"></div>
+        <div class="chart-grid">
+            <div class="chart-card chart-card--wide">
+                <p class="chart-title">Pipeline Overview</p>
+                <div id="table-startups"></div>
+            </div>
+            <div class="chart-card"><p class="chart-title">ARR Distribution</p>
+                <div id="chart-arr-dist"></div></div>
+            <div class="chart-card"><p class="chart-title">Growth vs Burn Multiple</p>
+                <div id="chart-growth-burn"></div></div>
+            <div class="chart-card chart-card--wide">
+                <p class="chart-title">Ranking by ARR</p>
+                <div id="chart-arr-ranking"></div>
+            </div>
+        </div>
+        <!-- Panel lateral de startup individual -->
+        <div id="startup-detail-panel" class="detail-panel hidden"></div>
+    </div>
+
+    <!-- Layer 3: Valuation Layer -->
+    <div id="tab-valuation-layer" class="tab-content">
+        <div class="kpi-grid" id="valuation-kpis"></div>
+        <div class="chart-grid">
+            <div class="chart-card chart-card--wide">
+                <p class="chart-title">Valuation Signals</p>
+                <div id="table-valuation"></div>
+            </div>
+            <div class="chart-card"><p class="chart-title">Growth vs Entry Multiple</p>
+                <div id="chart-growth-multiple"></div></div>
+            <div class="chart-card"><p class="chart-title">Price-Performance Matrix</p>
+                <div id="chart-ppm"></div></div>
+            <div class="chart-card chart-card--wide">
+                <p class="chart-title">Relative Attractiveness Ranking</p>
+                <div id="chart-attractiveness"></div>
+            </div>
+            <div class="chart-card chart-card--wide">
+                <p class="chart-title">Efficiency Score Breakdown (Top 10)</p>
+                <div id="chart-efficiency"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Layer 4: Placeholder -->
+    <div id="tab-portfolio" class="tab-content placeholder-tab">
+        <p>Portfolio & Returns</p>
+        <p class="placeholder-sub">Coming in v2: IRR · TVPI · DPI · MOIC · Exit Scenarios</p>
+    </div>
+
+</main>
+
+<!-- Scripts CDN -->
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/arquero@5.4.0/dist/arquero.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+<!-- Scripts locales -->
+<script src="src/js/utils.js"></script>
+<script src="src/js/data_loader.js"></script>
+<script src="src/js/market_reality.js"></script>
+<script src="src/js/startup_review.js"></script>
+<script src="src/js/valuation_layer.js"></script>
+
+<script>
+// Inicialización principal
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('[init] Inicializando dashboard...');
+
+    loadAllData();
+
+    // Tab switching
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (btn.classList.contains('disabled')) return;
+
+            const tab = btn.dataset.tab;
+
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+            btn.classList.add('active');
+            document.getElementById(`tab-${tab}`).classList.add('active');
+
+            AppState.activeTab = tab;
+            renderActiveTab();
+        });
+    });
+
+    // Filtros: re-render al cambiar
+    document.querySelectorAll('.filter-select').forEach(sel => {
+        sel.addEventListener('change', () => {
+            const key = sel.id.replace('filter-', '');
+            AppState.filters[key] = sel.value;
+            renderActiveTab();
+        });
+    });
+
+    // Reset filtros
+    document.getElementById('btn-reset-filters').addEventListener('click', () => {
+        document.querySelectorAll('.filter-select').forEach(s => s.value = '');
+        Object.keys(AppState.filters).forEach(k => AppState.filters[k] = '');
+        renderActiveTab();
+    });
+
+    // Export CSV
+    document.getElementById('btn-export-csv').addEventListener('click', exportFilteredData);
+});
+
+console.log('[AIDA Market Intelligence] v1.0 — Iniciando...');
+</script>
+
 </body>
 </html>
