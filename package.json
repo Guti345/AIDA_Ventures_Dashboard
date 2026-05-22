@@ -1,0 +1,15 @@
+{
+  "name": "aida-market-intelligence",
+  "version": "0.1.0",
+  "description": "Investment intelligence platform for AIDA Ventures: market benchmarking, startup pipeline review, and valuation analysis for Latin American startups.",
+  "main": "index.html",
+  "scripts": {},
+  "keywords": [
+    "venture-capital",
+    "market-intelligence",
+    "startup-analytics",
+    "latin-america"
+  ],
+  "author": "AIDA Ventures",
+  "license": "MIT"
+}

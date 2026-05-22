@@ -1,0 +1,8 @@
+{
+  "_file": "fund_thesis_config.json",
+  "_purpose": "Configuración de la tesis de inversión del fondo. Define sector, geografía y etapa objetivo para calcular strategic_fit_score.",
+  "_ref": "instrucciones_v2 — Sección 11",
+  "target_sectors": [],
+  "target_regions": [],
+  "target_stages": []
+}

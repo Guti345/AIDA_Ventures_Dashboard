@@ -1,0 +1,16 @@
+/* styles.css */
+/* Propósito: Estilos globales del dashboard con variables de color AIDA Ventures. Dark mode como base. */
+/* Ref: instrucciones_v2 — Sección 13 */
+
+:root {
+    --color-primary-dark:    #070B14;
+    --color-primary-navy:    #132139;
+    --color-secondary-dark:  #10141C;
+    --color-text-gray:       #61646D;
+    --color-muted-gray:      #8A8F98;
+    --color-border-gray:     #E0E5EB;
+    --color-light-bg:        #FBFBFC;
+    --color-white:           #FFFFFF;
+    --color-accent-blue:     #134E97;
+    --color-logo-black:      #141414;
+}
